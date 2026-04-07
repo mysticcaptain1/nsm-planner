@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#1a1a18"/>
+  <circle cx="256" cy="256" r="140" fill="none" stroke="#378ADD" stroke-width="28"/>
+  <path d="M160 290 Q200 200 256 220 Q312 240 352 180" fill="none" stroke="#1D9E75" stroke-width="22" stroke-linecap="round"/>
+  <text x="256" y="390" text-anchor="middle" font-family="-apple-system,sans-serif" font-weight="700" font-size="64" fill="#ffffff">NSM</text>
+</svg>

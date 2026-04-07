@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="NSM Planner">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <title>NSM Planner</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg2: #f5f5f3;
+      --bg3: #ebebea;
+      --text: #1a1a18;
+      --text2: #6b6b68;
+      --text3: #9b9b98;
+      --border: rgba(0,0,0,0.10);
+      --border2: rgba(0,0,0,0.18);
+      --radius: 12px;
+      --radius-sm: 8px;
+      --blue: #378ADD;
+      --blue-bg: #E6F1FB;
+      --blue-text: #185FA5;
+      --green: #1D9E75;
+      --green-bg: #E1F5EE;
+      --green-text: #0F6E56;
+      --amber: #BA7517;
+      --amber-bg: #FAEEDA;
+      --amber-text: #854F0B;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1c1c1a;
+        --bg2: #252523;
+        --bg3: #2e2e2b;
+        --text: #f0efe8;
+        --text2: #a0a09a;
+        --text3: #6a6a65;
+        --border: rgba(255,255,255,0.10);
+        --border2: rgba(255,255,255,0.18);
+        --blue-bg: #0c2a44;
+        --blue-text: #85B7EB;
+        --green-bg: #082e20;
+        --green-text: #5DCAA5;
+        --amber-bg: #2e1c05;
+        --amber-text: #EF9F27;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      padding-bottom: calc(80px + var(--safe-bottom));
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      border-bottom: 0.5px solid var(--border);
+      padding: calc(var(--safe-top) + 14px) 20px 14px;
+      z-index: 10;
+    }
+    .topbar h1 { font-size: 18px; font-weight: 600; color: var(--text); }
+    .topbar p { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+    .scroll { padding: 16px 16px 0; }
+
+    .pace-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .pace-card {
+      background: var(--bg2);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+    }
+    .pace-card .plabel { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 3px; }
+    .pace-card .pvalue { font-size: 20px; font-weight: 600; color: var(--text); line-height: 1; }
+    .pace-card .psub { font-size: 10px; color: var(--text2); margin-top: 3px; }
+
+    .section-title { font-size: 12px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 8px; }
+
+    .week-nav {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .week-nav .wlabel { flex: 1; font-size: 16px; font-weight: 600; color: var(--text); }
+    .week-nav button {
+      background: var(--bg2);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px 16px;
+      font-size: 14px;
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .week-nav button:active { background: var(--bg3); }
+
+    .day-list { display: flex; flex-direction: column; gap: 8px; }
+    .day-card {
+      background: var(--bg);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .day-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      cursor: pointer;
+    }
+    .day-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .dot-quality { background: var(--blue); }
+    .dot-easy { background: var(--green); }
+    .dot-long { background: var(--amber); }
+    .dot-rest { background: var(--border2); }
+    .day-name { flex: 1; font-size: 15px; font-weight: 500; color: var(--text); }
+    .badge {
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-weight: 500;
+    }
+    .badge-quality { background: var(--blue-bg); color: var(--blue-text); }
+    .badge-easy { background: var(--green-bg); color: var(--green-text); }
+    .badge-long { background: var(--amber-bg); color: var(--amber-text); }
+    .badge-rest { background: var(--bg2); color: var(--text2); }
+
+    .day-body {
+      display: none;
+      padding: 0 16px 14px;
+      border-top: 0.5px solid var(--border);
+    }
+    .day-card.open .day-body { display: block; }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      padding: 6px 0;
+      border-bottom: 0.5px solid var(--border);
+    }
+    .detail-row:last-child { border-bottom: none; }
+    .detail-row .dk { color: var(--text2); }
+    .detail-row .dv { color: var(--text); font-weight: 500; text-align: right; max-width: 58%; }
+
+    .workout-box {
+      background: var(--bg2);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      margin-top: 10px;
+    }
+    .workout-box .wb-title { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+    .wb-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 4px 0; }
+    .wb-row .wbname { color: var(--text); }
+    .wb-row .wbpace { color: var(--text2); font-size: 12px; }
+
+    .bottombar {
+      position: fixed;
+      bottom: 0;
+      left: 0; right: 0;
+      background: var(--bg);
+      border-top: 0.5px solid var(--border);
+      padding: 12px 20px calc(12px + var(--safe-bottom));
+      display: flex;
+      gap: 8px;
+    }
+    .bottombar button {
+      flex: 1;
+      background: var(--bg2);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text2);
+      cursor: pointer;
+    }
+    .bottombar button.active {
+      background: var(--text);
+      color: var(--bg);
+      border-color: var(--text);
+    }
+    .bottombar button:active { opacity: 0.7; }
+
+    .settings-page { display: none; padding: 16px; }
+    .settings-page.active { display: block; }
+    .plan-page { display: block; }
+    .plan-page.hidden { display: none; }
+
+    .setting-group { background: var(--bg2); border-radius: var(--radius); padding: 0 16px; margin-bottom: 16px; }
+    .setting-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      border-bottom: 0.5px solid var(--border);
+      font-size: 15px;
+    }
+    .setting-item:last-child { border-bottom: none; }
+    .setting-item .sk { color: var(--text); }
+    .setting-item .sv { color: var(--text2); }
+    .setting-item select {
+      background: var(--bg3);
+      border: 0.5px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 14px;
+      padding: 4px 8px;
+    }
+    .setting-item input[type=range] { width: 120px; accent-color: var(--blue); }
+
+    .info-box {
+      background: var(--blue-bg);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      margin-bottom: 16px;
+    }
+    .info-box p { font-size: 13px; color: var(--blue-text); line-height: 1.5; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>NSM Planner</h1>
+  <p id="topSub">VDOT 43 · 5K 22:31 · Norwegian Singles Method</p>
+</div>
+
+<div class="plan-page" id="planPage">
+  <div class="scroll">
+    <div class="pace-grid" id="paceGrid"></div>
+    <p class="section-title">Training week</p>
+    <div class="week-nav">
+      <button onclick="changeWeek(-1)">← Prev</button>
+      <span class="wlabel" id="weekLabel">Week 1</span>
+      <button onclick="changeWeek(1)">Next →</button>
+    </div>
+    <div class="day-list" id="dayList"></div>
+  </div>
+</div>
+
+<div class="settings-page" id="settingsPage">
+  <div class="scroll" style="padding:0;">
+    <div class="info-box">
+      <p>Adjust your settings below. Changes apply immediately to the plan.</p>
+    </div>
+    <p class="section-title">Athlete</p>
+    <div class="setting-group">
+      <div class="setting-item">
+        <span class="sk">VDOT</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <input type="range" min="30" max="65" step="1" value="43" id="vdotRange" oninput="updateVDOT(this.value)">
+          <span class="sv" id="vdotVal">43</span>
+        </div>
+      </div>
+    </div>
+    <p class="section-title">Schedule</p>
+    <div class="setting-group">
+      <div class="setting-item">
+        <span class="sk">Quality sessions / week</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <input type="range" min="2" max="3" step="1" value="3" id="qCount" oninput="document.getElementById('qVal').textContent=this.value; updatePlan();">
+          <span class="sv" id="qVal">3</span>
+        </div>
+      </div>
+      <div class="setting-item">
+        <span class="sk">Week starts</span>
+        <select id="startDay" onchange="updatePlan()">
+          <option value="0">Monday</option>
+          <option value="1">Tuesday</option>
+          <option value="2">Wednesday</option>
+          <option value="3">Thursday</option>
+          <option value="4">Friday</option>
+          <option value="5">Saturday</option>
+          <option value="6">Sunday</option>
+        </select>
+      </div>
+      <div class="setting-item">
+        <span class="sk">Long run day</span>
+        <select id="longRunDay" onchange="updatePlan()">
+          <option value="5">Saturday</option>
+          <option value="6">Sunday</option>
+        </select>
+      </div>
+    </div>
+    <p class="section-title">About NSM paces</p>
+    <div class="setting-group">
+      <div class="setting-item" style="display:block;padding:14px 0;">
+        <p style="font-size:13px;color:var(--text2);line-height:1.6;">Sub-threshold = 2.5–3.5 mmol/L lactate. You should be able to hold a short sentence but not a full conversation. Reps feel controlled and repeatable. Easy runs should feel genuinely easy — max 70% heart rate.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="bottombar">
+  <button class="active" id="tabPlan" onclick="switchTab('plan')">Plan</button>
+  <button id="tabSettings" onclick="switchTab('settings')">Settings</button>
+</div>
+
+<script>
+const FULL_DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+
+let vdot = 43;
+let currentWeek = 1;
+let expandedDay = null;
+
+function calcPaces(v) {
+  const thr = 306.5 * Math.exp(-0.01127 * v);
+  const easy = thr * 1.26;
+  const easyMax = thr * 1.41;
+  const subS = thr * 1.04;
+  const subM = thr * 1.06;
+  const subL = thr * 1.08;
+  const fmt = s => { const m = Math.floor(s/60); const sec = Math.round(s%60); return `${m}:${sec.toString().padStart(2,'0')}`; };
+  return {
+    easyMin: fmt(easy), easyMax: fmt(easyMax),
+    subShort: fmt(subS), subMed: fmt(subM), subLong: fmt(subL),
+  };
+}
+
+function renderPaceGrid() {
+  const p = calcPaces(vdot);
+  document.getElementById('paceGrid').innerHTML = `
+    <div class="pace-card"><div class="plabel">Easy pace</div><div class="pvalue">${p.easyMin}–${p.easyMax}</div><div class="psub">min/km · zone 1-2</div></div>
+    <div class="pace-card"><div class="plabel">SubT short</div><div class="pvalue">${p.subShort}</div><div class="psub">min/km · 3–4 min reps</div></div>
+    <div class="pace-card"><div class="plabel">SubT medium</div><div class="pvalue">${p.subMed}</div><div class="psub">min/km · 6–8 min reps</div></div>
+    <div class="pace-card"><div class="plabel">SubT long</div><div class="pvalue">${p.subLong}</div><div class="psub">min/km · 10–12 min reps</div></div>
+  `;
+}
+
+function getWeekDays(week, qCount, longRunDayIdx) {
+  let days = Array.from({length:7}, (_,i) => ({type:'easy', idx:i}));
+  const used = new Set();
+  used.add(longRunDayIdx); days[longRunDayIdx].type = 'long';
+  const rest = (longRunDayIdx + 1) % 7;
+  used.add(rest); days[rest].type = 'rest';
+  const qTypes = ['short','medium','long'];
+  const cands = [0,2,4,1,3,5,6].filter(i => !used.has(i));
+  for (let q = 0; q < qCount && q < cands.length; q++) {
+    days[cands[q]].type = 'quality';
+    days[cands[q]].qualityType = qTypes[q];
+  }
+  return days;
+}
+
+function getDetail(dayData, week) {
+  const p = calcPaces(vdot);
+  const s = 1 + (week - 1) * 0.03;
+  if (dayData.type === 'rest') return { summary:'Full rest or light stretching', distance:'0 km', rpe:'—', sets:null };
+  if (dayData.type === 'easy') return { summary:'Easy aerobic run', distance:`~${Math.round(5*s)}–${Math.round(7*s)} km`, rpe:'4–5 / 10', pace:`${p.easyMin}–${p.easyMax} min/km`, sets:null };
+  if (dayData.type === 'long') {
+    const base = 10 + Math.floor((week-1)*0.8);
+    return { summary:'Long easy run', distance:`~${base}–${base+2} km`, rpe:'4–5 / 10', pace:`${p.easyMin}–${p.easyMax} min/km`, sets:null };
+  }
+  if (dayData.type === 'quality') {
+    const qt = dayData.qualityType;
+    if (qt === 'short') {
+      const reps = 6 + Math.floor((week-1)*0.25);
+      return { summary:'Sub-threshold · short reps', distance:`~${Math.round(8*s)} km total`, rpe:'6–7 / 10 during reps', sets:[
+        {n:`Warm-up`, d:'10 min easy jog', pace:''},
+        {n:`${reps} × 3 min`, d:'1 min easy recovery', pace:p.subShort+' /km'},
+        {n:`Cool-down`, d:'10 min easy jog', pace:''},
+      ]};
+    }
+    if (qt === 'medium') {
+      const reps = 4 + Math.floor((week-1)*0.2);
+      return { summary:'Sub-threshold · medium reps', distance:`~${Math.round(10*s)} km total`, rpe:'6–7 / 10 during reps', sets:[
+        {n:`Warm-up`, d:'10 min easy jog', pace:''},
+        {n:`${reps} × 7 min`, d:'2 min easy recovery', pace:p.subMed+' /km'},
+        {n:`Cool-down`, d:'10 min easy jog', pace:''},
+      ]};
+    }
+    if (qt === 'long') {
+      const reps = 3 + Math.floor((week-1)*0.15);
+      return { summary:'Sub-threshold · long reps', distance:`~${Math.round(12*s)} km total`, rpe:'6–7 / 10 during reps', sets:[
+        {n:`Warm-up`, d:'10 min easy jog', pace:''},
+        {n:`${reps} × 11 min`, d:'3 min easy recovery', pace:p.subLong+' /km'},
+        {n:`Cool-down`, d:'10 min easy jog', pace:''},
+      ]};
+    }
+  }
+}
+
+function badgeHtml(type) {
+  const map = {quality:'badge-quality Quality', easy:'badge-easy Easy', long:'badge-long Long run', rest:'badge-rest Rest'};
+  const [cls, label] = map[type].split(' ');
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function dotClass(type) {
+  return {quality:'dot-quality', easy:'dot-easy', long:'dot-long', rest:'dot-rest'}[type];
+}
+
+function updatePlan() {
+  const qCount = parseInt(document.getElementById('qCount').value);
+  const startDay = parseInt(document.getElementById('startDay').value);
+  const longRunDay = parseInt(document.getElementById('longRunDay').value);
+  const days = getWeekDays(currentWeek, qCount, longRunDay);
+
+  document.getElementById('weekLabel').textContent = `Week ${currentWeek}`;
+
+  document.getElementById('dayList').innerHTML = days.map((d, i) => {
+    const realIdx = (i + startDay) % 7;
+    const det = getDetail(d, currentWeek);
+    const isOpen = expandedDay === i;
+
+    let bodyHtml = '';
+    if (det.distance && det.distance !== '0 km') bodyHtml += `<div class="detail-row"><span class="dk">Distance</span><span class="dv">${det.distance}</span></div>`;
+    if (det.pace) bodyHtml += `<div class="detail-row"><span class="dk">Target pace</span><span class="dv">${det.pace}</span></div>`;
+    if (det.rpe !== '—') bodyHtml += `<div class="detail-row"><span class="dk">RPE</span><span class="dv">${det.rpe}</span></div>`;
+    bodyHtml += `<div class="detail-row"><span class="dk">Focus</span><span class="dv">${det.summary}</span></div>`;
+
+    if (det.sets) {
+      bodyHtml += `<div class="workout-box"><div class="wb-title">Workout structure</div>`;
+      bodyHtml += det.sets.map(s => `<div class="wb-row"><span class="wbname">${s.n} <span style="color:var(--text2);font-size:12px;">${s.d}</span></span><span class="wbpace">${s.pace}</span></div>`).join('');
+      bodyHtml += `</div>`;
+    }
+
+    return `<div class="day-card${isOpen?' open':''}" id="day${i}">
+      <div class="day-header" onclick="toggleDay(${i})">
+        <div class="day-dot ${dotClass(d.type)}"></div>
+        <span class="day-name">${FULL_DAYS[realIdx]}</span>
+        ${badgeHtml(d.type)}
+      </div>
+      <div class="day-body">${bodyHtml}</div>
+    </div>`;
+  }).join('');
+}
+
+function toggleDay(i) {
+  expandedDay = expandedDay === i ? null : i;
+  updatePlan();
+}
+
+function changeWeek(dir) {
+  currentWeek = Math.max(1, Math.min(16, currentWeek + dir));
+  expandedDay = null;
+  updatePlan();
+}
+
+function updateVDOT(v) {
+  vdot = parseInt(v);
+  document.getElementById('vdotVal').textContent = v;
+  renderPaceGrid();
+  updatePlan();
+}
+
+function switchTab(tab) {
+  document.getElementById('planPage').classList.toggle('hidden', tab !== 'plan');
+  document.getElementById('settingsPage').classList.toggle('active', tab !== 'plan');
+  document.getElementById('tabPlan').classList.toggle('active', tab === 'plan');
+  document.getElementById('tabSettings').classList.toggle('active', tab !== 'plan');
+}
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+}
+
+renderPaceGrid();
+updatePlan();
+</script>
+</body>
+</html>
