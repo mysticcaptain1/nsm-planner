@@ -318,14 +318,34 @@ let vdot = 43;
 let currentWeek = 1;
 let expandedDay = null;
 
+function vdotToThresholdKm(vdot) {
+  const table = [
+    [30,415],[32,392],[34,372],[36,354],[38,338],
+    [40,323],[42,310],[43,304],[44,298],[45,292],
+    [47,280],[50,263],[52,255],[55,242],[60,222],[65,206]
+  ];
+  for (let i = 0; i < table.length - 1; i++) {
+    if (vdot >= table[i][0] && vdot <= table[i+1][0]) {
+      const t = (vdot - table[i][0]) / (table[i+1][0] - table[i][0]);
+      return table[i][1] + t * (table[i+1][1] - table[i][1]);
+    }
+  }
+  return vdot < 30 ? table[0][1] : table[table.length-1][1];
+}
+
 function calcPaces(v) {
-  const thr = 306.5 * Math.exp(-0.01127 * v);
-  const easy = thr * 1.26;
-  const easyMax = thr * 1.41;
-  const subS = thr * 1.04;
-  const subM = thr * 1.06;
-  const subL = thr * 1.08;
-  const fmt = s => { const m = Math.floor(s/60); const sec = Math.round(s%60); return `${m}:${sec.toString().padStart(2,'0')}`; };
+  const thrKm = vdotToThresholdKm(v);
+  const subS = thrKm * 1.03;
+  const subM = thrKm * 1.05;
+  const subL = thrKm * 1.07;
+  const easy = thrKm * 1.28;
+  const easyMax = thrKm * 1.42;
+  const fmt = s => {
+    s = Math.round(s);
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2,'0')}`;
+  };
   return {
     easyMin: fmt(easy), easyMax: fmt(easyMax),
     subShort: fmt(subS), subMed: fmt(subM), subLong: fmt(subL),
