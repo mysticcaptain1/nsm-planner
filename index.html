@@ -477,7 +477,7 @@ function updatePlan() {
       bodyHtml += `<div class="workout-box"><div class="wb-title">Workout structure</div>`;
       bodyHtml += det.sets.map(s => `<div class="wb-row"><span class="wbname">${s.n} <span style="color:var(--text2);font-size:12px;">${s.d}</span></span><span class="wbpace">${s.pace}</span></div>`).join('');
       bodyHtml += `</div>`;
-      bodyHtml += `<button class="export-btn" onclick="exportFit(${i})">⬇ Export to Garmin (.fit)</button>`;
+      bodyHtml += `<button class="export-btn" onclick="exportFit(${i})">Export to Garmin (.fit)</button>`;
     }
     return `<div class="day-card${isOpen?' open':''}" id="day${i}">
       <div class="day-header" onclick="toggleDay(${i})">
@@ -667,7 +667,9 @@ function writeFitWorkout(workoutName, steps) {
 const dayDataMap = {};
 
 function exportFit(dayIdx) {
-  const dayData = dayDataMap[dayIdx];
+  try {
+    const dayData = dayDataMap[dayIdx];
+    if (!dayData) { console.error('No day data for index', dayIdx); return; }
   const p = calcPaces(vdot);
   const wu  = parseInt(document.getElementById('warmup').value) * 60;
   const cd  = parseInt(document.getElementById('cooldown').value) * 60;
@@ -713,9 +715,14 @@ function exportFit(dayIdx) {
   const blob = new Blob([fitData], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = name.replace(/ /g,'_') + '.fit';
+  a.href = url;
+  a.download = name.replace(/ /g, '_') + '.fit';
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  console.log('FIT exported:', name, steps.length, 'steps');
+  } catch(e) { console.error('FIT export error:', e); alert('Export failed: ' + e.message); }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 renderPaceGrid();
