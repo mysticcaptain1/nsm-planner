@@ -460,6 +460,9 @@ function updatePlan() {
   document.getElementById('restBanner').style.display = isRestWeek ? 'block' : 'none';
   document.getElementById('restWeekBtn').classList.toggle('active', isRestWeek);
 
+  // store day objects keyed by index so export button can look them up safely
+  days.forEach((d, i) => { dayDataMap[i] = d; });
+
   document.getElementById('dayList').innerHTML = days.map((d, i) => {
     const realIdx = (i + startDay) % 7;
     const det = getDetail(d);
@@ -474,7 +477,7 @@ function updatePlan() {
       bodyHtml += `<div class="workout-box"><div class="wb-title">Workout structure</div>`;
       bodyHtml += det.sets.map(s => `<div class="wb-row"><span class="wbname">${s.n} <span style="color:var(--text2);font-size:12px;">${s.d}</span></span><span class="wbpace">${s.pace}</span></div>`).join('');
       bodyHtml += `</div>`;
-      bodyHtml += `<button class="export-btn" onclick="exportFit(${JSON.stringify(d)}, '${FULL_DAYS[realIdx]}')">⬇ Export to Garmin (.fit)</button>`;
+      bodyHtml += `<button class="export-btn" onclick="exportFit(${i})">⬇ Export to Garmin (.fit)</button>`;
     }
     return `<div class="day-card${isOpen?' open':''}" id="day${i}">
       <div class="day-header" onclick="toggleDay(${i})">
@@ -525,12 +528,26 @@ function switchTab(tab) {
   document.getElementById('tabSettings').classList.toggle('active', tab !== 'plan');
 }
 
-// ── FIT file encoder ──────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+
+// ── FIT file encoder ─────────────────────────────────────────────────────────
+// Minimal structured workout encoder for Garmin Connect import.
+// Implements only the message types needed: file_id, workout, workout_step.
+
 function writeFitWorkout(workoutName, steps) {
-  const INTENSITY = { ACTIVE:1, RECOVERY:2, WARMUP:3, COOLDOWN:4 };
-  const DUR_TIME = 0, TGT_NONE = 0;
+  // steps: [{type:'warmup'|'active'|'recovery'|'cooldown', durSecs, targetPaceSecKm}]
+  const WS = {
+    ACTIVE: 1, RECOVERY: 2, WARMUP: 3, COOLDOWN: 4,
+  };
+  const INTENSITY = { ACTIVE: 1, RECOVERY: 2, WARMUP: 3, COOLDOWN: 4 };
+  const DUR_TIME = 0;       // duration type: time
+  const TGT_PACE = 6;       // target type: pace zone (speed range)
+  const TGT_NONE = 0;
+
+  // Convert sec/km to cm/s (FIT speed unit)
   const kmSecToCmSec = secPerKm => Math.round(100000 / secPerKm);
 
+  // ── CRC ──────────────────────────────────────────────────────────────────
   const CRC_TABLE = (() => {
     const t = new Uint16Array(16);
     for (let i = 0; i < 16; i++) {
@@ -551,18 +568,25 @@ function writeFitWorkout(workoutName, steps) {
     return c;
   }
 
+  // ── byte builder ─────────────────────────────────────────────────────────
   const bytes = [];
   const u8  = v => bytes.push(v & 0xFF);
   const u16 = v => { u8(v); u8(v >> 8); };
   const u32 = v => { u16(v); u16(v >> 16); };
   const str = (s, len) => { for (let i = 0; i < len; i++) u8(i < s.length ? s.charCodeAt(i) : 0); };
 
+  // ── definition message ───────────────────────────────────────────────────
   function defMsg(localNum, globalNum, fields) {
+    // header: definition
     u8(0x40 | (localNum & 0x0F));
-    u8(0); u8(0); u16(globalNum); u8(fields.length);
+    u8(0);            // reserved
+    u8(0);            // little-endian
+    u16(globalNum);
+    u8(fields.length);
     fields.forEach(([fNum, size, baseType]) => { u8(fNum); u8(size); u8(baseType); });
   }
 
+  // ── data message ─────────────────────────────────────────────────────────
   function datMsg(localNum, values, sizes) {
     u8(localNum & 0x0F);
     values.forEach((v, i) => {
@@ -574,94 +598,126 @@ function writeFitWorkout(workoutName, steps) {
     });
   }
 
+  // ── FIT header (written last, placeholder now) ────────────────────────────
   for (let i = 0; i < 14; i++) bytes.push(0);
 
+  // ── file_id (mesg 0) ─────────────────────────────────────────────────────
+  // fields: type(u8), manufacturer(u16), product(u16), serial(u32), time_created(u32), number(u16)
   defMsg(0, 0, [[0,1,0],[1,2,132],[2,2,132],[3,4,134],[4,4,134],[5,2,132]]);
-  datMsg(0, [5, 1, 0, 0, 0, 0], [1,2,2,4,4,2]);
+  datMsg(0, [5, 1, 0, 0, 0, 0], [1,2,2,4,4,2]); // type=5 (workout)
 
+  // ── workout (mesg 26) ────────────────────────────────────────────────────
+  // fields: sport(u8), num_valid_steps(u16), wkt_name(string 16)
   defMsg(1, 26, [[4,1,0],[6,2,132],[8,16,7]]);
+  const nameStr = (workoutName + '\0').slice(0, 16).padEnd(16, '\0');
   datMsg(1, [1, steps.length, workoutName], [1, 2, 16]);
 
+  // ── workout_step (mesg 27) ───────────────────────────────────────────────
+  // fields: message_index(u16), duration_type(u8), duration_value(u32),
+  //         target_type(u8), target_value(u32), intensity(u8)
   defMsg(2, 27, [[254,2,132],[5,1,0],[6,4,134],[7,1,0],[8,4,134],[0,1,0]]);
 
   steps.forEach((step, idx) => {
     const durSecs = Math.round(step.durSecs);
     let tgtType = TGT_NONE, tgtVal = 0, intensity = INTENSITY.ACTIVE;
+
     if (step.type === 'warmup') intensity = INTENSITY.WARMUP;
     else if (step.type === 'cooldown') intensity = INTENSITY.COOLDOWN;
     else if (step.type === 'recovery') intensity = INTENSITY.RECOVERY;
+
     if (step.targetPaceSecKm && step.type === 'active') {
+      // Encode pace as speed range ±3 sec/km around target
       const lo = kmSecToCmSec(step.targetPaceSecKm + 3);
       const hi = kmSecToCmSec(step.targetPaceSecKm - 3);
-      tgtType = 6;
+      // Garmin encodes speed zone as (hi << 16 | lo) for custom zones
+      tgtType = 6; // speed
       tgtVal = (hi << 16) | lo;
     }
+
     datMsg(2, [idx, DUR_TIME, durSecs * 1000, tgtType, tgtVal, intensity], [2,1,4,1,4,1]);
   });
 
+  // ── fill header ──────────────────────────────────────────────────────────
   const dataSize = bytes.length - 14;
-  bytes[0]=14; bytes[1]=0x10; bytes[2]=0x08; bytes[3]=0x02;
-  bytes[4]=dataSize&0xFF; bytes[5]=(dataSize>>8)&0xFF;
-  bytes[6]=(dataSize>>16)&0xFF; bytes[7]=(dataSize>>24)&0xFF;
+  bytes[0]  = 14;          // header size
+  bytes[1]  = 0x10;        // protocol version
+  bytes[2]  = 0x08;        // profile version lo
+  bytes[3]  = 0x02;        // profile version hi (2.08 -> 520)
+  // data size LE
+  bytes[4]  = dataSize & 0xFF;
+  bytes[5]  = (dataSize >> 8) & 0xFF;
+  bytes[6]  = (dataSize >> 16) & 0xFF;
+  bytes[7]  = (dataSize >> 24) & 0xFF;
+  // .FIT signature
   ['.','F','I','T'].forEach((c,i) => bytes[8+i] = c.charCodeAt(0));
+  // header CRC
   const hCrc = crc16(bytes, 0, 12);
-  bytes[12]=hCrc&0xFF; bytes[13]=(hCrc>>8)&0xFF;
+  bytes[12] = hCrc & 0xFF;
+  bytes[13] = (hCrc >> 8) & 0xFF;
+
+  // ── file CRC ─────────────────────────────────────────────────────────────
   const fCrc = crc16(bytes, 0, bytes.length);
-  bytes.push(fCrc&0xFF); bytes.push((fCrc>>8)&0xFF);
+  bytes.push(fCrc & 0xFF);
+  bytes.push((fCrc >> 8) & 0xFF);
 
   return new Uint8Array(bytes);
 }
 
-function exportFit(dayData, label) {
+// day data store — populated each time updatePlan() runs
+const dayDataMap = {};
+
+function exportFit(dayIdx) {
+  const dayData = dayDataMap[dayIdx];
   const p = calcPaces(vdot);
-  const wu   = parseInt(document.getElementById('warmup').value) * 60;
-  const cd   = parseInt(document.getElementById('cooldown').value) * 60;
+  const wu  = parseInt(document.getElementById('warmup').value) * 60;
+  const cd  = parseInt(document.getElementById('cooldown').value) * 60;
   const recS = parseInt(document.getElementById('recShort').value) * 60;
   const recM = parseInt(document.getElementById('recMed').value) * 60;
   const recL = parseInt(document.getElementById('recLong').value) * 60;
-  const parsePace = s => { const [m,sec] = s.split(':').map(Number); return m*60+sec; };
+
+  // Parse "M:SS" pace string -> seconds/km
+  const parsePace = str => { const [m,s] = str.split(':').map(Number); return m*60+s; };
 
   let steps = [], name = '';
 
   if (dayData.qualityType === 'short') {
-    const reps = 6+Math.floor((currentWeek-1)*0.25);
+    const reps = 6 + Math.floor((currentWeek-1)*0.25);
     name = `NSM Short W${currentWeek}`;
-    steps.push({type:'warmup', durSecs:wu, targetPaceSecKm:null});
-    for (let i=0;i<reps;i++) {
-      steps.push({type:'active', durSecs:180, targetPaceSecKm:parsePace(p.subShort)});
-      steps.push({type:'recovery', durSecs:recS, targetPaceSecKm:null});
+    steps.push({ type:'warmup',   durSecs: wu,  targetPaceSecKm: null });
+    for (let i = 0; i < reps; i++) {
+      steps.push({ type:'active',   durSecs: 180, targetPaceSecKm: parsePace(p.subShort) });
+      steps.push({ type:'recovery', durSecs: recS, targetPaceSecKm: null });
     }
-    steps.push({type:'cooldown', durSecs:cd, targetPaceSecKm:null});
+    steps.push({ type:'cooldown', durSecs: cd,  targetPaceSecKm: null });
   } else if (dayData.qualityType === 'medium') {
-    const reps = 4+Math.floor((currentWeek-1)*0.2);
+    const reps = 4 + Math.floor((currentWeek-1)*0.2);
     name = `NSM Medium W${currentWeek}`;
-    steps.push({type:'warmup', durSecs:wu, targetPaceSecKm:null});
-    for (let i=0;i<reps;i++) {
-      steps.push({type:'active', durSecs:420, targetPaceSecKm:parsePace(p.subMed)});
-      steps.push({type:'recovery', durSecs:recM, targetPaceSecKm:null});
+    steps.push({ type:'warmup',   durSecs: wu,  targetPaceSecKm: null });
+    for (let i = 0; i < reps; i++) {
+      steps.push({ type:'active',   durSecs: 420, targetPaceSecKm: parsePace(p.subMed) });
+      steps.push({ type:'recovery', durSecs: recM, targetPaceSecKm: null });
     }
-    steps.push({type:'cooldown', durSecs:cd, targetPaceSecKm:null});
+    steps.push({ type:'cooldown', durSecs: cd,  targetPaceSecKm: null });
   } else if (dayData.qualityType === 'long') {
-    const reps = 3+Math.floor((currentWeek-1)*0.15);
+    const reps = 3 + Math.floor((currentWeek-1)*0.15);
     name = `NSM Long W${currentWeek}`;
-    steps.push({type:'warmup', durSecs:wu, targetPaceSecKm:null});
-    for (let i=0;i<reps;i++) {
-      steps.push({type:'active', durSecs:660, targetPaceSecKm:parsePace(p.subLong)});
-      steps.push({type:'recovery', durSecs:recL, targetPaceSecKm:null});
+    steps.push({ type:'warmup',   durSecs: wu,  targetPaceSecKm: null });
+    for (let i = 0; i < reps; i++) {
+      steps.push({ type:'active',   durSecs: 660, targetPaceSecKm: parsePace(p.subLong) });
+      steps.push({ type:'recovery', durSecs: recL, targetPaceSecKm: null });
     }
-    steps.push({type:'cooldown', durSecs:cd, targetPaceSecKm:null});
+    steps.push({ type:'cooldown', durSecs: cd,  targetPaceSecKm: null });
   }
 
   const fitData = writeFitWorkout(name, steps);
-  const blob = new Blob([fitData], {type:'application/octet-stream'});
+  const blob = new Blob([fitData], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href=url; a.download=name.replace(/ /g,'_')+'.fit'; a.click();
+  a.href = url; a.download = name.replace(/ /g,'_') + '.fit';
+  a.click();
   URL.revokeObjectURL(url);
 }
 // ─────────────────────────────────────────────────────────────────────────────
-
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 renderPaceGrid();
 renderHRGrid();
 updatePlan();
